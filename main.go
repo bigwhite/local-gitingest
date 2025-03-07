@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -90,9 +91,17 @@ func isGitRoot() bool {
 	return err == nil // If the command runs successfully, we are in a git repo (possibly a subdirectory)
 }
 
-func writeDirectoryStructure(rootDir string, excludeList map[string]bool, includeSizeLimit bool, sizeLimit int64, outFile *os.File) error {
+func writeDirectoryStructure(rootDir string, excludeList map[string]bool, includeSizeLimit bool, sizeLimit int64, out io.Writer) error {
+	dirStructure, fileContents, err := buildDirectoryStructure(rootDir, excludeList, includeSizeLimit, sizeLimit)
+	if err != nil {
+		return err
+	}
+	return writeOutput(out, dirStructure, fileContents)
+}
+
+func buildDirectoryStructure(rootDir string, excludeList map[string]bool, includeSizeLimit bool, sizeLimit int64) (string, map[string]string, error) {
 	var dirStructure strings.Builder
-	var fileContents strings.Builder
+	fileContents := make(map[string]string)
 
 	err := filepath.WalkDir(rootDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -128,25 +137,32 @@ func writeDirectoryStructure(rootDir string, excludeList map[string]bool, includ
 					return nil
 				}
 			}
-			dirStructure.WriteString(fmt.Sprintf("%s%s\n", indent, d.Name()))
-			content, err := os.ReadFile(path)
+			dirStructure.WriteString(fmt.Sprintf("%s%s\n", indent, d.Name())) //只写入目录结构
+			content, err := os.ReadFile(path)                                 //读取文件内容
 			if err != nil {
 				return err
 			}
-			fileContents.WriteString(fmt.Sprintf("================================================\n"))
-			fileContents.WriteString(fmt.Sprintf("File: %s\n", relPath))
-			fileContents.WriteString(fmt.Sprintf("================================================\n"))
-			fileContents.WriteString(string(content))
-			fileContents.WriteString("\n\n")
+			fileContents[relPath] = string(content) //将文件内容存入map
 		}
 		return nil
 	})
 
 	if err != nil {
-		return err
+		return "", nil, err
 	}
-	outFile.WriteString(dirStructure.String())
-	outFile.WriteString("\n")
-	outFile.WriteString(fileContents.String())
+
+	return dirStructure.String(), fileContents, nil
+}
+
+func writeOutput(out io.Writer, dirStructure string, fileContents map[string]string) error {
+	io.WriteString(out, dirStructure)
+	io.WriteString(out, "\n")
+	for relPath, content := range fileContents {
+		io.WriteString(out, fmt.Sprintf("================================================\n"))
+		io.WriteString(out, fmt.Sprintf("File: %s\n", relPath))
+		io.WriteString(out, fmt.Sprintf("================================================\n"))
+		io.WriteString(out, content)
+		io.WriteString(out, "\n\n")
+	}
 	return nil
 }
