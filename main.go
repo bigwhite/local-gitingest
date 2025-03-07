@@ -108,7 +108,12 @@ func buildDirectoryStructure(rootDir string, excludeList map[string]bool, includ
 			return err
 		}
 
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules" || d.Name() == "vendor") {
+		// 忽略隐藏目录及其内容
+		if d.IsDir() && strings.HasPrefix(d.Name(), ".") && d.Name() != "." && d.Name() != "./" {
+			return filepath.SkipDir
+		}
+
+		if d.IsDir() && (d.Name() == "node_modules" || d.Name() == "vendor") {
 			return filepath.SkipDir
 		}
 
