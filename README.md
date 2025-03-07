@@ -17,9 +17,8 @@
 1.  **Make sure you have Go installed (version 1.16 or later).**
 2.  **Build the executable:**
     ```bash
-    go build -o local-gitingest main.go
+    $make
     ```
-    (Assuming `main.go` is the name of the source file).  You may want to put the resulting `local-gitingest` binary in a directory that is in your system's `PATH`.
 
 ## Usage
 
