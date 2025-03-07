@@ -15,8 +15,17 @@
 ## Installation
 
 1.  **Make sure you have Go installed (version 1.16 or later).**
-2.  **Build the executable:**
+2.  **Use go install**:
+    ```
+    $go install github.com/bigwhite/local-gitingest@latest
+    ```
+
+    or 
+    
+    **Build the executable from source**:
     ```bash
+    $git clone https://github.com/bigwhite/local-gitingest.git
+	$cd local-gitingest
     $make
     ```
 

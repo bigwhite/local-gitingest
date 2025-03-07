@@ -1,3 +1,3 @@
 module github.com/bigwhite/local-gitingest
 
-go 1.24.0
+go 1.22.0
