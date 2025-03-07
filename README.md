@@ -68,6 +68,5 @@ local-gitingest [options]
 
 *   **LLM Context:**  Provide a concise representation of your codebase to large language models for tasks like code completion, documentation generation, or code analysis.
 *   **Project Snapshots:**  Quickly create a text-based snapshot of your project at a specific point in time.
-*   **Code Reviews (Partial):**  While not a replacement for proper code review tools, it can be useful for sharing a simplified view of changes.
 * **Offline usage:** Unlike gitingest.com, local-gitingest can be used offline.
 
