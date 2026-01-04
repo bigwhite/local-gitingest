@@ -10,6 +10,8 @@
     *   **Default Exclusions:** Automatically excludes executable files (files without extensions) and common directories like `.git`, `node_modules`, and `vendor`.
     *   **`.gitignore` Support:**  Automatically respects `.gitignore` patterns from your repository root.
     *   **Extension-based Exclusion:**  Allows you to specify file extensions to exclude (e.g., `.jpg`, `.png`, `.log`).
+    *   **Directory-based Exclusion:**  Allows you to exclude specific directories at the root level.
+*   **Target Subdirectory:**  Optionally ingest only a specific subdirectory instead of the entire repository.
 *   **File Size Limit:**  Optionally limits the size of files included in the output.
 *   **Verbose Mode:**  Optional verbose output (`-v`) shows which files are being excluded.
 *   **Git Repository Root Check:**  Ensures the tool is run from the root directory of a Git repository.
@@ -34,16 +36,22 @@
 ## Usage
 
 ```bash
-local-gitingest [options]
+local-gitingest [options] [target-subdirectory]
 ```
 
 **Options:**
 
+*   `-d <directory>`:  Target subdirectory to ingest. Only this directory (recursively) will be included in the output. If not specified, the entire repository is processed.
+*   `-exclude-dir <dir>`:  Directories to exclude at the root level (can be specified multiple times). For example, `-exclude-dir=vendor -exclude-dir=node_modules`.
 *   `-exclude <extensions>`:  A comma-separated list of file extensions to exclude (e.g., `.jpg,.png,.gif`).  Do *not* include a space after the comma.
 *   `-o <filename>`:  Specifies the output file name (default: `output.txt`).
 *   `-size-limit`: Enables a file size limit.
 *   `-max-size <bytes>`: Sets the maximum file size in bytes (default: 50KB, which is 51200 bytes).  This option is only used if `-size-limit` is also provided.
-*   `-v, -verbose`: Enables verbose mode, showing files excluded by `.gitignore` patterns.
+*   `-v, -verbose`: Enables verbose mode, showing files excluded by filters.
+
+**Arguments:**
+
+*   `target-subdirectory`:  Alternative to `-d` flag. Specifies the subdirectory to ingest.
 
 **Important:**  `local-gitingest` *must* be run from the root directory of a Git repository.
 
@@ -55,6 +63,31 @@ local-gitingest [options]
     ./local-gitingest
     ```
     This will create a file named `output.txt` containing the repository structure and file contents, excluding executables and common build/dependency directories.
+
+*   **Target a specific subdirectory:**
+
+    ```bash
+    ./local-gitingest integration-tests
+    ```
+    or
+    ```bash
+    ./local-gitingest -d integration-tests
+    ```
+    This will only ingest files from the `integration-tests` directory.
+
+*   **Exclude specific directories:**
+
+    ```bash
+    ./local-gitingest -exclude-dir=vendor -exclude-dir=node_modules
+    ```
+    This will exclude the `vendor` and `node_modules` directories from the output.
+
+*   **Combine target subdirectory with extension filter:**
+
+    ```bash
+    ./local-gitingest -d cmd/server -exclude go,sum
+    ```
+    This will only ingest files from the `cmd/server` directory, excluding `.go` and `.sum` files.
 
 *   **Exclude specific file types:**
 

@@ -55,6 +55,22 @@ func ParsePattern(line string) (*Pattern, error) {
 	return p, nil
 }
 
+// arrayFlag implements flag.Value interface for repeated string flags.
+// This allows specifying multiple -exclude-dir flags.
+type arrayFlag []string
+
+// String returns the array elements as a comma-separated string.
+func (a *arrayFlag) String() string {
+	return strings.Join(*a, ",")
+}
+
+// Set appends a value to the array flag.
+// Implements flag.Value interface for repeated flag parsing.
+func (a *arrayFlag) Set(value string) error {
+	*a = append(*a, value)
+	return nil
+}
+
 // GitignoreMatcher encapsulates gitignore pattern matching logic.
 type GitignoreMatcher struct {
 	patterns  []*Pattern
@@ -156,12 +172,161 @@ func (m *GitignoreMatcher) IsIgnored(relPath string, isDir bool) bool {
 	return false
 }
 
+// isExcludedDir checks if a directory is in the exclude list.
+// Only matches directories at the root level (not nested paths).
+// Implements: FR-2.3, FR-2.4
+func isExcludedDir(dirPath string, excludeDirs []string, rootDir string) (bool, error) {
+	// Empty exclude list means nothing is excluded
+	if len(excludeDirs) == 0 {
+		return false, nil
+	}
+
+	// Get relative path from root
+	relPath, err := filepath.Rel(rootDir, dirPath)
+	if err != nil {
+		return false, err
+	}
+
+	// Split into components and get first level only
+	components := strings.SplitN(relPath, string(filepath.Separator), 2)
+	rootLevelName := components[0]
+
+	// Check against exclude list
+	for _, excl := range excludeDirs {
+		if rootLevelName == excl {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// isOutsideTargetDir checks if path is outside the target subdirectory.
+// Returns false if targetDir is empty (no restriction).
+// Implements: FR-1.5, NFR-1.2
+func isOutsideTargetDir(path string, rootDir, targetDir string) (bool, error) {
+	// No target restriction
+	if targetDir == "" {
+		return false, nil
+	}
+
+	// Get relative path from root
+	relPath, err := filepath.Rel(rootDir, path)
+	if err != nil {
+		return false, err
+	}
+
+	// Root directory (.) should always be traversed to reach subdirectories
+	if relPath == "." {
+		return false, nil
+	}
+
+	// Target directory itself is allowed
+	if relPath == targetDir {
+		return false, nil
+	}
+
+	// Check if path is within target directory
+	// Path must start with "targetDir/" to be inside
+	targetPrefix := targetDir + string(filepath.Separator)
+	if strings.HasPrefix(relPath, targetPrefix) {
+		return false, nil
+	}
+
+	// Path is outside target directory
+	return true, nil
+}
+
+// checkTargetExcludeConflict validates that targetDir is not in excludeDirs.
+// Returns an error if the target directory is also marked for exclusion.
+// Implements: FR-3.2
+func checkTargetExcludeConflict(targetDir string, excludeDirs []string) error {
+	// Empty targetDir has no conflict
+	if targetDir == "" {
+		return nil
+	}
+
+	// Check if targetDir matches any excluded directory
+	for _, excl := range excludeDirs {
+		if targetDir == excl {
+			return fmt.Errorf("target subdirectory '%s' conflicts with excluded directory '%s'", targetDir, excl)
+		}
+	}
+
+	return nil
+}
+
+// validateTargetDir checks if the target directory exists and is within rootDir.
+// Returns nil if targetDir is empty (optional parameter).
+// Implements: FR-1.8, FR-1.9, FR-1.10, NFR-4.1
+func validateTargetDir(rootDir, targetDir string) error {
+	// Empty targetDir is optional
+	if targetDir == "" {
+		return nil
+	}
+
+	// Construct full path
+	targetPath := filepath.Join(rootDir, targetDir)
+
+	// Check if target exists
+	info, err := os.Stat(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("target directory '%s' not found in project root", targetDir)
+		}
+		return fmt.Errorf("failed to access target directory '%s': %w", targetDir, err)
+	}
+
+	// Must be a directory
+	if !info.IsDir() {
+		return fmt.Errorf("target '%s' is not a directory", targetDir)
+	}
+
+	// Check for path traversal attacks
+	if err := checkPathTraversal(rootDir, targetPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkPathTraversal validates that targetPath is within rootDir.
+// Prevents directory traversal attacks by ensuring targetPath does not escape rootDir.
+// Implements: FR-1.10, NFR-4.1
+func checkPathTraversal(rootDir, targetPath string) error {
+	// Resolve to absolute paths
+	absRoot, err := filepath.Abs(rootDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve root directory: %w", err)
+	}
+
+	absTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve target path: %w", err)
+	}
+
+	// Get relative path from root to target
+	rel, err := filepath.Rel(absRoot, absTarget)
+	if err != nil {
+		return fmt.Errorf("failed to check path relationship: %w", err)
+	}
+
+	// If relative path starts with "..", target is outside rootDir
+	if strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("path traversal detected: '%s' is outside project root", targetPath)
+	}
+
+	return nil
+}
+
 var (
 	excludeExtensions string
 	outputFilename    string
 	includeSizeLimit  bool
 	sizeLimit         int64
 	verbose           bool
+	targetDir         string    // Target subdirectory to ingest (-d flag or positional arg)
+	excludeDirList    arrayFlag // Directories to exclude at root level (-exclude-dir flag)
 )
 
 func init() {
@@ -171,13 +336,25 @@ func init() {
 	flag.Int64Var(&sizeLimit, "max-size", 50*1024, "Maximum file size in bytes (default: 50KB)") // 50KB default
 	flag.BoolVar(&verbose, "v", false, "Enable verbose mode (show excluded files)")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose mode (show excluded files)")
+
+	// [NEW] Target subdirectory flag
+	flag.StringVar(&targetDir, "d", "", "Target subdirectory to ingest (default: all files)")
+
+	// [NEW] Exclude directories flag (can be specified multiple times)
+	flag.Var(&excludeDirList, "exclude-dir", "Directories to exclude at root level (can be specified multiple times)")
 }
 
 func usage() {
 	fmt.Println("local-gitingest: Convert a local Git repository to a single text file.")
-	fmt.Println("\nUsage: local-gitingest [options]")
-	fmt.Println("Options:")
+	fmt.Println("\nUsage: local-gitingest [options] [target-subdirectory]")
+	fmt.Println("\nOptions:")
 	flag.PrintDefaults()
+	fmt.Println("\nArguments:")
+	fmt.Println("  target-subdirectory  Alternative to -d flag")
+	fmt.Println("\nExamples:")
+	fmt.Println("  local-gitingest integration-tests")
+	fmt.Println("  local-gitingest -d cmd/server -e go,sum")
+	fmt.Println("  local-gitingest -exclude-dir=vendor -exclude-dir=node_modules")
 	fmt.Println("\nThis tool must be run from the root directory of a Git repository.")
 	fmt.Println("It generates a text file containing the repository's directory structure and file contents,")
 	fmt.Println("excluding specified file types and those exceeding a size limit.")
@@ -188,6 +365,16 @@ func main() {
 	flag.Usage = usage // Set custom usage function
 	flag.Parse()
 
+	// [NEW] Handle positional argument for target directory
+	args := flag.Args()
+	if len(args) > 0 {
+		if targetDir != "" {
+			fmt.Fprintln(os.Stderr, "Error: cannot specify both -d flag and positional argument")
+			os.Exit(1)
+		}
+		targetDir = args[0]
+	}
+
 	// 检查是否在 Git 仓库的根目录下
 	if !isGitRoot() {
 		fmt.Fprintln(os.Stderr, "Error: This tool must be run from the root directory of a Git repository.")
@@ -197,6 +384,18 @@ func main() {
 	rootDir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting current directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// [NEW] Validate target directory exists
+	if err := validateTargetDir(rootDir, targetDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// [NEW] Check for conflict between target and exclude
+	if err := checkTargetExcludeConflict(targetDir, []string(excludeDirList)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -225,7 +424,7 @@ func main() {
 	}
 	defer outFile.Close()
 
-	if err := writeDirectoryStructure(rootDir, excludeList, includeSizeLimit, sizeLimit, gitignore, outFile); err != nil {
+	if err := writeDirectoryStructure(rootDir, targetDir, []string(excludeDirList), excludeList, includeSizeLimit, sizeLimit, gitignore, outFile); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing directory structure: %v\n", err)
 		os.Exit(1)
 	}
@@ -247,15 +446,15 @@ func isGitRoot() bool {
 	return err == nil // If the command runs successfully, we are in a git repo (possibly a subdirectory)
 }
 
-func writeDirectoryStructure(rootDir string, excludeList map[string]bool, includeSizeLimit bool, sizeLimit int64, gitignore *GitignoreMatcher, out io.Writer) error {
-	dirStructure, fileContents, err := buildDirectoryStructure(rootDir, excludeList, includeSizeLimit, sizeLimit, gitignore)
+func writeDirectoryStructure(rootDir string, targetDir string, excludeDirs []string, excludeList map[string]bool, includeSizeLimit bool, sizeLimit int64, gitignore *GitignoreMatcher, out io.Writer) error {
+	dirStructure, fileContents, err := buildDirectoryStructure(rootDir, targetDir, excludeDirs, excludeList, includeSizeLimit, sizeLimit, gitignore)
 	if err != nil {
 		return err
 	}
 	return writeOutput(out, dirStructure, fileContents)
 }
 
-func buildDirectoryStructure(rootDir string, excludeList map[string]bool, includeSizeLimit bool, sizeLimit int64, gitignore *GitignoreMatcher) (string, map[string]string, error) {
+func buildDirectoryStructure(rootDir string, targetDir string, excludeDirs []string, excludeList map[string]bool, includeSizeLimit bool, sizeLimit int64, gitignore *GitignoreMatcher) (string, map[string]string, error) {
 	var dirStructure strings.Builder
 	fileContents := make(map[string]string)
 
@@ -278,16 +477,52 @@ func buildDirectoryStructure(rootDir string, excludeList map[string]bool, includ
 			return nil
 		}
 
-		// 2. Hard-coded exclusions (hidden dirs, node_modules, vendor)
-		if d.IsDir() && strings.HasPrefix(d.Name(), ".") && d.Name() != "." && d.Name() != "./" {
-			return filepath.SkipDir
+		// 2. [NEW] Root-level excluded directories (-exclude-dir flag)
+		if d.IsDir() {
+			if excluded, err := isExcludedDir(path, excludeDirs, rootDir); err != nil {
+				return err
+			} else if excluded {
+				if verbose {
+					fmt.Fprintf(os.Stderr, "Excluded by -exclude-dir: %s\n", relPath)
+				}
+				return filepath.SkipDir
+			}
 		}
 
-		if d.IsDir() && (d.Name() == "node_modules" || d.Name() == "vendor") {
-			return filepath.SkipDir
+		// 3. [NEW] Target subdirectory boundary check
+		if outside, err := isOutsideTargetDir(path, rootDir, targetDir); err != nil {
+			return err
+		} else if outside {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
-		// 3. CLI -exclude flag (file extensions)
+		// 4. Hard-coded exclusions (hidden dirs, node_modules, vendor)
+		// But skip these exclusions if the directory is within targetDir
+		isWithinTarget := false
+		if targetDir != "" {
+			// Check if current path is within target directory
+			if rel, err := filepath.Rel(rootDir, path); err == nil {
+				if strings.HasPrefix(rel, targetDir+string(filepath.Separator)) || rel == targetDir {
+					isWithinTarget = true
+				}
+			}
+		}
+
+		// Only apply hard-coded exclusions if not within target
+		if !isWithinTarget {
+			if d.IsDir() && strings.HasPrefix(d.Name(), ".") && d.Name() != "." && d.Name() != "./" {
+				return filepath.SkipDir
+			}
+
+			if d.IsDir() && (d.Name() == "node_modules" || d.Name() == "vendor") {
+				return filepath.SkipDir
+			}
+		}
+
+		// 5. CLI -exclude flag (file extensions)
 		if !d.IsDir() {
 			ext := filepath.Ext(d.Name())
 			if excludeList[ext] {
@@ -295,7 +530,7 @@ func buildDirectoryStructure(rootDir string, excludeList map[string]bool, includ
 			}
 		}
 
-		// 4. File size limit
+		// 6. File size limit
 		if includeSizeLimit && !d.IsDir() {
 			info, err := d.Info()
 			if err != nil {
