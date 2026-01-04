@@ -8,8 +8,10 @@
 *   **File Content Inclusion:** Includes the content of text-based source files.
 *   **Exclusion Filters:**
     *   **Default Exclusions:** Automatically excludes executable files (files without extensions) and common directories like `.git`, `node_modules`, and `vendor`.
+    *   **`.gitignore` Support:**  Automatically respects `.gitignore` patterns from your repository root.
     *   **Extension-based Exclusion:**  Allows you to specify file extensions to exclude (e.g., `.jpg`, `.png`, `.log`).
 *   **File Size Limit:**  Optionally limits the size of files included in the output.
+*   **Verbose Mode:**  Optional verbose output (`-v`) shows which files are being excluded.
 *   **Git Repository Root Check:**  Ensures the tool is run from the root directory of a Git repository.
 
 ## Installation
@@ -41,6 +43,7 @@ local-gitingest [options]
 *   `-o <filename>`:  Specifies the output file name (default: `output.txt`).
 *   `-size-limit`: Enables a file size limit.
 *   `-max-size <bytes>`: Sets the maximum file size in bytes (default: 50KB, which is 51200 bytes).  This option is only used if `-size-limit` is also provided.
+*   `-v, -verbose`: Enables verbose mode, showing files excluded by `.gitignore` patterns.
 
 **Important:**  `local-gitingest` *must* be run from the root directory of a Git repository.
 
@@ -72,6 +75,16 @@ local-gitingest [options]
     ./local-gitingest -exclude .log,.tmp,.bak -o my_repo.txt -size-limit -max-size 102400
     ```
     This will create a file named `my_repo.txt`, exclude files with the extensions `.log`, `.tmp`, and `.bak`. and only files smaller than 100KB (102400 bytes) will be included.
+
+*   **Verbose mode (shows excluded files):**
+
+    ```bash
+    ./local-gitingest -v
+    ```
+    This will show which files are being excluded by `.gitignore` patterns.
+
+*   **`.gitignore` support:**
+    The tool automatically respects your repository's `.gitignore` file. Patterns like `*.log`, `build/`, `*.tmp` will exclude matching files and directories from the output.
 
 ## Why use `local-gitingest`?
 
