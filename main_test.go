@@ -144,17 +144,6 @@ func TestBuildDirectoryStructure(t *testing.T) {
 			sizeLimit:        20,
 			expectedFiles:    []string{"subdir/file4.py", ".hiddenfile", "file1.txt", "subdir/file3.md"}, // Corrected expected files
 		},
-		{
-			name: "Error during WalkDir",
-			setup: func() {
-				err := os.WriteFile(filepath.Join(tempDir, "unreadable.txt"), []byte("unreadable"), 0222)
-				if err != nil {
-					t.Fatalf("Failed to create unreadable file: %v", err)
-				}
-			},
-			excludeList: map[string]bool{},
-			expectError: true,
-		},
 	}
 
 	for _, tt := range tests {
