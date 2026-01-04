@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read",
+      "LS",
+      "Grep",
+      "Glob",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(go version)",
+      "Bash(go env)",
+      "Bash(go test ./...)",
+      "Bash(make test)",
+      "Bash(make lint)",
+      "Bash(make build)"
+    ],
+    "ask": [
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(go get:*)",
+      "Bash(go mod tidy)",
+      "WebFetch"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Read(./.env*)",
+      "Read(./**/.env*)",
+      "Read(*.pem)",
+      "Read(*.key)"
+    ]
+  },
+  "env": {
+    "MAX_THINKING_TOKENS": "4096"
+  }
+}
